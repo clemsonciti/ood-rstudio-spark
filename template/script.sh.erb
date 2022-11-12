@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# Load the required environment
+setup_env () {
+  module purge
+
+  module load <%= context.version %>
+  echo R version is <%= context.version %>
+  RSPATH="/software/external/rstudio/2022.07.0-548/bin"
+  #RSPATH="/software/external/rstudio/1.3.959/bin"
+  #RSPATH="/software/external/rstudio/1.4.1717/bin"
+  module load <%= context.modules %>
+}
+setup_env
+
+#
+# Start RStudio Server
+#
+
+# PAM auth helper used by RStudio
+export RSTUDIO_AUTH="${PWD}/bin/auth"
+
+echo old TMPDIR $TMPDIR
+export TMPDIR=`mktemp -d`
+echo new TMPDIR $TMPDIR
+
+# Generate an `rsession` wrapper script
+export RSESSION_WRAPPER_FILE="${PWD}/rsession.sh"
+(
+umask 077
+sed 's/^ \{2\}//' > "${RSESSION_WRAPPER_FILE}" << EOL
+  #!/usr/bin/env bash
+  # Log all output from this script
+  export RSESSION_LOG_FILE="${RSTUDIO_SINGULARITY_HOST_MNT}${PWD}/rsession.log"
+  exec &>>"\${RSESSION_LOG_FILE}"
+  set -x
+  source /etc/profile.d/modules.sh
+  echo "============================================================="
+  module load <%= context.modules %>
+  module list
+  
+  export TMPDIR="${TMPDIR}"
+  export R_USER="$USER"
+  
+  # Launch the original command
+  echo "Launching rsession..."
+  exec ${RSPATH}/rsession --r-libs-user "${R_LIBS_USER}" "\${@}"
+EOL
+)
+chmod 700 "${RSESSION_WRAPPER_FILE}"
+
+# generate a temporary database.conf file
+export RSTUDIO_DB_CONF_FILE="${PWD}/database.conf"
+(
+umask 077
+sed 's/^ \{2\}//' > "${RSTUDIO_DB_CONF_FILE}" << EOL
+  # /etc/rstudio/database.conf
+  provider=sqlite
+  
+  # Directory in which the sqlite database will be written
+  directory="${TMPDIR}"
+EOL
+)
+chmod 744 "${RSTUDIO_DB_CONF_FILE}"
+
+
+# Set working directory to home directory
+cd "${HOME}"
+
+# Output debug info
+module list
+
+## fix rstudio active session error on start
+find ~/.rstudio/sessions/active/*/session-persistent-state -type f | xargs sed -i '' -e 's/abend="1"/abend="0"/'
+
+set -x
+
+# Launch the RStudio Server
+echo "Starting up rserver..."
+
+#export OPENSSL_B="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/openssl-1.1.1b-4vv4aak5ml5bapbjypskobgsfynlomdh/lib"
+#export KRB5="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/krb5-1.19.3-bugdaxzdsvc26ijskck7ieqag62iwgls/lib"
+#export LD_PRELOAD=$KRB5/libk5crypto.so.3:$OPENSSL_B/libcrypto.so.1.1:$LD_PRELOAD
+#echo $LD_PRELOAD
+
+module load anaconda3/2022.05-gcc/9.5.0
+export LD_PRELOAD=/lib64/libuuid.so.1:$LD_PRELOAD
+
+${RSPATH}/rserver \
+  --www-port ${port} \
+  --auth-none 0 \
+  --auth-pam-helper-path "${RSTUDIO_AUTH}" \
+  --auth-encrypt-password 0 \
+  --rsession-path "${RSESSION_WRAPPER_FILE}" \
+  --server-data-dir "${TMPDIR}" \
+  --server-working-dir "${TMPDIR}" \
+  --server-user "${USER}" \
+  --database-config-file "${RSTUDIO_DB_CONF_FILE}"
+
+#  --secure-cookie-key-file "${TMPDIR}/rstudio-server/secure-cookie-key"
+  
+#--database-config-file "${TMPDIR}/database.conf" \
