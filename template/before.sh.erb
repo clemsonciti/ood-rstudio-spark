@@ -10,17 +10,17 @@
   #          "py4j-0.10.7-src.zip"
   #        when "3.1.1"
   #          "py4j-0.10.9-src.zip"
-  #        # just in case we update spark_version without updating this!
-  #        else
-  #          "py4j-0.10.9.5-src.zip"
+          # just in case we update spark_version without updating this!
+   #        else
+  #         "py4j-0.10.9.5-src.zip"
   #        end
 
   py4j = "py4j-0.10.9.5-src.zip"
   spark_config = {
     "spark.ui.reverseProxy" => "true",
-    #"spark.ui.reverseProxyUrl" => "https://ondemand.osc.edu/node/${SPARK_MASTER_HOST}/${SPARK_MASTER_WEBUI_PORT}",
-    "spark.authenticate" => "true",
-    "spark.authenticate.secret" => "${SPARK_SECRET}",
+    "spark.ui.reverseProxyUrl" => "https://https://openod.palmetto.clemson.edu/node/${SPARK_MASTER_HOST}/${SPARK_MASTER_WEBUI_PORT}",
+    #"spark.authenticate" => "true",
+    #"spark.authenticate.secret" => "${SPARK_SECRET}",
     # Comment out below when reverse proxy and authentication are added
     # This still starts the Web UI on the master/worker procs, but disables it for
     # the Application driver
