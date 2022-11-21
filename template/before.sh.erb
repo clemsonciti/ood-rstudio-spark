@@ -81,7 +81,7 @@ echo  "spark://"${SPARK_MASTER_HOST}:${SPARK_MASTER_PORT} > ${PWD}/spark_master.
 
 spark_webui_port=$(find_port ${SPARK_MASTER_HOST})
 export SPARK_MASTER_WEBUI_PORT=${spark_webui_port}
-echo  "https://"${SPARK_MASTER_HOST}:${SPARK_MASTER_WEBUIPORT} > ${PWD}/spark_master.info
+echo  "https://"${SPARK_MASTER_HOST}:${SPARK_MASTER_WEBUI_PORT} >> ${PWD}/spark_master.info
 
 
 # Generate Spark secret
