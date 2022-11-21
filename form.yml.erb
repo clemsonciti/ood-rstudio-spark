@@ -115,6 +115,31 @@ attributes:
       - For example: <b>openjdk/11.0.2-gcc/8.3.1 jags/4.3.0-gcc/8.3.1</b>
       </small>
   
+  spark_version:
+    widget: select
+    label: "Spark version"
+    options:
+      - "3.1.1"
+      
+  num_workers:
+    widget: "number_field"
+    value: "1"
+    min: "1"
+    max: "48"
+    label: "Number of workers per node"
+    help: |
+      This describes how the cores and memory are divvied up on the node
+      (*useful to reduce memory allocated for each worker*). Should be a
+      natural factor of the number of cores on the node you chose above. Do **NOT**
+      exceed the number of cores on the node.
+
+  only_driver_on_root:
+    widget: "check_box"
+    label: Only launch the driver on the master node.
+    help: |
+      This is typically used for `.collect` and `.take` operations that require
+      a large amount of memory allocated (> 2GB) for the driver process.
+  
 # All of the attributes that make up the Dashboard form (in respective order),
 # and made available to the submit configuration file and the template ERB
 # files
@@ -135,5 +160,8 @@ form:
   - pbs_walltime
   - pbs_queue
   - version
+  - spark_version
   - modules
+  - num_workers
+  - only_driver_on_root
   - bc_email_on_started

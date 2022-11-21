@@ -1,3 +1,37 @@
+<%-
+  avail_cores = context.pbs_ncpus.to_i 
+  avail_mem   = context.pbs_mem.to_i - 2
+  num_workers = context.num_workers.to_i
+  num_nodes = context.pbs_select.to_i
+  torque_cluster = OodAppkit.clusters[context.cluster].job_config[:adapter] == 'torque'
+
+  #py4j =  case context.spark_version
+  #        when "2.4.7"
+  #          "py4j-0.10.7-src.zip"
+  #        when "3.1.1"
+  #          "py4j-0.10.9-src.zip"
+  #        # just in case we update spark_version without updating this!
+  #        else
+  #          "py4j-0.10.9.5-src.zip"
+  #        end
+
+  py4j = "py4j-0.10.9.5-src.zip"
+  spark_config = {
+    "spark.ui.reverseProxy" => "true",
+    #"spark.ui.reverseProxyUrl" => "https://ondemand.osc.edu/node/${SPARK_MASTER_HOST}/${SPARK_MASTER_WEBUI_PORT}",
+    "spark.authenticate" => "true",
+    "spark.authenticate.secret" => "${SPARK_SECRET}",
+    # Comment out below when reverse proxy and authentication are added
+    # This still starts the Web UI on the master/worker procs, but disables it for
+    # the Application driver
+    "spark.ui.enabled" => "false",
+    # So we need to disable the ability to kill applications
+    "spark.ui.killEnabled" => "false",
+  }
+-%>
+
+
+
 # Export the module function if it exists
 [[ $(type -t module) == "function" ]] && export -f module
 
@@ -12,3 +46,127 @@ export RSTUDIO_PASSWORD="${password}"
 csrf_token=<%= SecureRandom.uuid %>
 echo "CSRF TOKEN"
 echo $csrf_token
+
+
+# Clean the environment
+module purge
+
+# Load the runtime environment
+runtime_env() {
+  module purge
+  module load <%= context.modules %> #spark/<%= context.spark_version %>-gcc/9.5.0
+  #export SPARK_HOME=$SPARK_ROOT
+  #export HADOOP_HOME="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/hadoop-3.3.2-okmjatecqewkbetivynrnipp4y5slhp4"
+  #export SPARK_DIST_CLASSPATH=$(${HADOOP_HOME}/bin/hadoop classpath)
+  export SPARK_HOME="/software/external/spark/3.3.1"
+  export OPENSSL_B="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/openssl-1.1.1b-4vv4aak5ml5bapbjypskobgsfynlomdh/lib"
+  export KRB5="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/krb5-1.19.3-bugdaxzdsvc26ijskck7ieqag62iwgls/lib"
+  export LD_PRELOAD=$KRB5/libk5crypto.so.3:$OPENSSL_B/libcrypto.so.1.1:$LD_PRELOAD
+  # Disable randomized hash for string in Python 3.3+
+  export PYTHONHASHSEED=0
+}
+
+#
+# Launch Spark cluster in standalone mode
+#
+
+# Create log directory
+export LOG_ROOT="${PWD}/logs"
+mkdir "${LOG_ROOT}"
+
+# Set master connection information
+export SPARK_MASTER_HOST=${host}
+export SPARK_MASTER_PORT=$(find_port ${SPARK_MASTER_HOST})
+spark_webui_port=$(find_port ${SPARK_MASTER_HOST})
+export SPARK_MASTER_WEBUI_PORT=${spark_webui_port}
+
+# Generate Spark secret
+SPARK_SECRET="$(create_passwd)"
+
+# Generate Spark configuration file
+export SPARK_CONFIG_FILE="${PWD}/spark-defaults.conf"
+(
+umask 077
+cat > "${SPARK_CONFIG_FILE}" << EOL
+<%- spark_config.each do |k, v| -%>
+<%= k %> <%= v %>
+<%- end -%>
+EOL
+)
+
+# Launch Spark master process
+(
+# Load the required environment
+runtime_env
+
+# Set master information
+export MASTER_LOG_FILE="${LOG_ROOT}/spark-master-${SPARK_MASTER_HOST}.out"
+
+# Launch master
+echo "Launching master on ${SPARK_MASTER_HOST}:${SPARK_MASTER_PORT}..."
+set -x
+"${SPARK_HOME}/bin"/spark-class "org.apache.spark.deploy.master.Master" \
+    --properties-file "${SPARK_CONFIG_FILE}" \
+  &> "${MASTER_LOG_FILE}" &
+)
+
+# Wait for the master server to fully start
+echo "Waiting for master server to open port ${SPARK_MASTER_PORT}..."
+if wait_until_port_used "${SPARK_MASTER_HOST}:${SPARK_MASTER_PORT}" 60; then
+  echo "Discovered master listening on port ${SPARK_MASTER_PORT}!"
+else
+  echo "Timed out waiting for master to open port ${SPARK_MASTER_PORT}!"
+  clean_up 1
+fi
+sleep 5
+
+echo "TTT - $(date)"
+
+# Create Spark worker launcher script
+export SPARK_WORKER_SCRIPT="${PWD}/spark-worker.sh"
+(
+umask 077
+sed 's/^ \{2\}//' > "${SPARK_WORKER_SCRIPT}" << EOL
+  #!/usr/bin/bash -l
+  echo "Launching worker $1 on ${HOSTNAME}"
+  #echo ${PBS_NODENUM}
+  #<%- if context.only_driver_on_root == "1" -%>
+  #[[ \${PBS_NODENUM} == "0" ]] && exit 0
+  #<%- end -%>
+
+  # Load helper methods
+  $(declare -f source_helpers)
+  source_helpers
+
+  # Load the required environment
+  $(declare -f runtime_env)
+  runtime_env
+
+  # Set worker connection information
+  export SPARK_WORKER_HOST=\${HOSTNAME}
+  export SPARK_WORKER_PORT=\$(find_port \${SPARK_WORKER_HOST})
+  export SPARK_WORKER_WEBUI_PORT=\$(find_port \${SPARK_WORKER_HOST})
+  export SPARK_WORKER_DIR="${PWD}/work"
+  export SPARK_WORKER_CORES=<%= avail_cores / num_workers %>
+  export WORKER_LOG_FILE="${LOG_ROOT}/spark-worker-\${SPARK_WORKER_HOST}-\${1}.out"
+
+  # Launch worker
+  echo "Launching worker #\${1} on \${SPARK_WORKER_HOST}:\${SPARK_WORKER_PORT}..."
+  set -x
+  "\${SPARK_HOME}/bin"/spark-class "org.apache.spark.deploy.worker.Worker" \\
+      --properties-file "${SPARK_CONFIG_FILE}" \\
+      spark://${SPARK_MASTER_HOST}:${SPARK_MASTER_PORT} \\
+    &> "\${WORKER_LOG_FILE}"
+EOL
+)
+chmod 700 "${SPARK_WORKER_SCRIPT}"
+
+# Launch workers
+echo "Launching workers..."
+echo "Total workers ..." <%= num_workers * (context.pbs_select.to_i - 1) %>
+
+worker=0
+
+for ((j=0; j<<%= num_workers %>; j++)); do
+  pssh -i -H "$(cat $PBS_NODEFILE | uniq | tail -n +2)" "${SPARK_WORKER_SCRIPT} ${j}"
+done

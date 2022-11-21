@@ -78,11 +78,6 @@ set -x
 # Launch the RStudio Server
 echo "Starting up rserver..."
 
-#export OPENSSL_B="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/openssl-1.1.1b-4vv4aak5ml5bapbjypskobgsfynlomdh/lib"
-#export KRB5="/software/spackages/linux-rocky8-x86_64/gcc-9.5.0/krb5-1.19.3-bugdaxzdsvc26ijskck7ieqag62iwgls/lib"
-#export LD_PRELOAD=$KRB5/libk5crypto.so.3:$OPENSSL_B/libcrypto.so.1.1:$LD_PRELOAD
-#echo $LD_PRELOAD
-
 module load anaconda3/2022.05-gcc/9.5.0
 export LD_PRELOAD=/lib64/libuuid.so.1:$LD_PRELOAD
 

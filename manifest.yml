@@ -1,7 +1,9 @@
 ---
-name: RStudio Server
+name: RStudio Server + Spark
 category: Interactive Apps
 subcategory: Servers
 role: batch_connect
 description: |
-  This app will launch an RStudio server on one or more nodes.
+  This app will allocate a number of nodes, launch RStudio 
+  server on the first node, and also launch an underlying Spark 
+  cluster across all the allocated nodes. 
