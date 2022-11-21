@@ -77,8 +77,12 @@ mkdir "${LOG_ROOT}"
 # Set master connection information
 export SPARK_MASTER_HOST=${host}
 export SPARK_MASTER_PORT=$(find_port ${SPARK_MASTER_HOST})
+echo  "spark://"${SPARK_MASTER_HOST}:${SPARK_MASTER_PORT} > ${PWD}/spark_master.info
+
 spark_webui_port=$(find_port ${SPARK_MASTER_HOST})
 export SPARK_MASTER_WEBUI_PORT=${spark_webui_port}
+echo  "https://"${SPARK_MASTER_HOST}:${SPARK_MASTER_WEBUIPORT} > ${PWD}/spark_master.info
+
 
 # Generate Spark secret
 SPARK_SECRET="$(create_passwd)"
